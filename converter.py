@@ -11,6 +11,38 @@ from typing import Optional, Union, Tuple
 import pymupdf as fitz
 
 
+def parse_page_selection(selection_str: str, total_slides: int) -> list[int]:
+    """Parse strings like '1-10, 15, 20-30' into 0-indexed slide numbers."""
+    if not selection_str or selection_str.strip().lower() in ("all", "*"):
+        return list(range(total_slides))
+
+    selected = set()
+    parts = selection_str.replace(" ", "").split(",")
+    for part in parts:
+        if not part:
+            continue
+        if "-" in part:
+            sub = part.split("-")
+            if len(sub) == 2:
+                try:
+                    start = int(sub[0])
+                    end = int(sub[1])
+                    for p in range(max(1, start), min(total_slides, end) + 1):
+                        selected.add(p - 1)
+                except ValueError:
+                    pass
+        else:
+            try:
+                p = int(part)
+                if 1 <= p <= total_slides:
+                    selected.add(p - 1)
+            except ValueError:
+                pass
+
+    result = sorted(list(selected))
+    return result if result else list(range(total_slides))
+
+
 def convert_pdf_to_nup(
     input_source: Union[str, bytes],
     output_path: Optional[str] = None,
@@ -25,6 +57,7 @@ def convert_pdf_to_nup(
     gap_y: float = 20.0,
     border_color: Tuple[float, float, float] = (0.8, 0.8, 0.8),
     border_width: float = 0.5,
+    page_selection: Optional[Union[str, list[int]]] = None,
 ) -> bytes:
     """
     Convert a slide presentation PDF to an N-up layout on A4 paper.
@@ -37,9 +70,20 @@ def convert_pdf_to_nup(
     else:
         src_doc = fitz.open(input_source)
 
-    total_slides = len(src_doc)
-    if total_slides == 0:
+    total_doc_slides = len(src_doc)
+    if total_doc_slides == 0:
         raise ValueError("Source PDF has 0 pages.")
+
+    if isinstance(page_selection, str):
+        slide_indices = parse_page_selection(page_selection, total_doc_slides)
+    elif isinstance(page_selection, (list, tuple)):
+        slide_indices = [idx for idx in page_selection if 0 <= idx < total_doc_slides]
+    else:
+        slide_indices = list(range(total_doc_slides))
+
+    total_slides = len(slide_indices)
+    if total_slides == 0:
+        raise ValueError("No slides selected for conversion.")
 
     slides_per_page = cols * rows
     total_pages = (total_slides + slides_per_page - 1) // slides_per_page
@@ -100,8 +144,9 @@ def convert_pdf_to_nup(
             x1 = x0 + target_w
             y1 = y0 + target_h
 
+            actual_slide_idx = slide_indices[slide_idx]
             rect = fitz.Rect(x0, y0, x1, y1)
-            page.show_pdf_page(rect, src_doc, slide_idx, keep_proportion=True)
+            page.show_pdf_page(rect, src_doc, actual_slide_idx, keep_proportion=True)
 
             if draw_border:
                 page.draw_rect(rect, color=border_color, width=border_width)
@@ -168,6 +213,8 @@ def main():
     parser.add_argument("--cols", type=int, help="Custom column count (overrides layout)")
     parser.add_argument("--rows", type=int, help="Custom row count (overrides layout)")
     parser.add_argument("--orientation", choices=["portrait", "landscape"], default="portrait", help="Page orientation")
+    parser.add_argument("--pages", help="Specific slides to include (e.g. '1-10, 15, 20-30')")
+    parser.add_argument("--exclude", help="Slides to exclude (e.g. '1, 54')")
     parser.add_argument("--no-border", action="store_true", help="Disable slide border")
     parser.add_argument("--no-numbers", action="store_true", help="Disable page numbers")
 
@@ -191,6 +238,17 @@ def main():
         base, ext = os.path.splitext(args.input)
         args.output = f"{base}_{cols*rows}_slides_per_page{ext}"
 
+    page_selection = None
+    if args.pages:
+        page_selection = args.pages
+    elif args.exclude:
+        # Load doc to get count
+        src_temp = fitz.open(args.input)
+        tot = len(src_temp)
+        src_temp.close()
+        excl_indices = set(parse_page_selection(args.exclude, tot))
+        page_selection = [i for i in range(tot) if i not in excl_indices]
+
     print(f"Converting '{args.input}' -> '{args.output}' ({cols}x{rows} on A4 {args.orientation})...")
     convert_pdf_to_nup(
         input_source=args.input,
@@ -199,7 +257,8 @@ def main():
         rows=rows,
         orientation=args.orientation,
         draw_border=not args.no_border,
-        show_page_numbers=not args.no_numbers
+        show_page_numbers=not args.no_numbers,
+        page_selection=page_selection
     )
     print(f"Successfully generated: {args.output}")
 

@@ -1,9 +1,23 @@
-// Slide Converter App Logic
-let currentFile = null;
-let currentLocalPath = null;
-let currentToken = null;
-let currentFilename = "slides_converted.pdf";
+// Slide Converter - 100% Client-Side Vector PDF Engine
+// Powered by PDF-Lib & PDF.js
+
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.js';
+}
+
+// App State
+let inputPdfBytes = null;
+let currentFileName = "slides";
+let convertedPdfBytes = null;
+let previewPdfInstance = null;
+let sourcePdfInstance = null; // for thumbnail picker
+let currentPreviewPage = 1;
+let totalPreviewPages = 1;
 let isProcessing = false;
+
+// Slide selection state
+let totalSlideCount = 0;
+let selectedSlideIndices = []; // 0-based list of indices
 
 // DOM Elements
 const dropZone = document.getElementById("drop-zone");
@@ -14,30 +28,58 @@ const selectedFileName = document.getElementById("selected-file-name");
 const selectedFileStats = document.getElementById("selected-file-stats");
 const btnChangeFile = document.getElementById("btn-change-file");
 
-const recentChipsContainer = document.getElementById("recent-chips");
-const btnRefreshRecent = document.getElementById("btn-refresh-recent");
+// Selection card
+const selectionCard = document.getElementById("selection-card");
+const selectionSummaryBadge = document.getElementById("selection-summary-badge");
+const slideRangeInput = document.getElementById("slide-range-input");
+const btnApplyRange = document.getElementById("btn-apply-range");
+const chipAll = document.getElementById("chip-all");
+const chipSkipFirst = document.getElementById("chip-skip-first");
+const chipEven = document.getElementById("chip-even");
+const chipOdd = document.getElementById("chip-odd");
+const btnOpenPicker = document.getElementById("btn-open-picker");
 
+// Modal Elements
+const pickerModal = document.getElementById("picker-modal");
+const btnCloseModal = document.getElementById("btn-close-modal");
+const btnCancelModal = document.getElementById("btn-cancel-modal");
+const btnApplyModal = document.getElementById("btn-apply-modal");
+const modalCounter = document.getElementById("modal-counter");
+const thumbnailGrid = document.getElementById("thumbnail-grid");
+const modalSelectAll = document.getElementById("modal-select-all");
+const modalDeselectAll = document.getElementById("modal-deselect-all");
+const modalExcludeFirst = document.getElementById("modal-exclude-first");
+const modalInvert = document.getElementById("modal-invert");
+
+// Layout & fine tuning
 const layoutOptions = document.querySelectorAll(".layout-option");
 const toggleBorder = document.getElementById("toggle-border");
 const toggleNumbers = document.getElementById("toggle-numbers");
 const selectOrientation = document.getElementById("select-orientation");
 
+// Preview Elements
 const previewPlaceholder = document.getElementById("preview-placeholder");
 const previewLoading = document.getElementById("preview-loading");
 const previewResultContainer = document.getElementById("preview-result-container");
-const previewImage = document.getElementById("preview-image");
+const previewCanvas = document.getElementById("preview-canvas");
 const previewStatsLine = document.getElementById("preview-stats-line");
 const savingsBadge = document.getElementById("savings-badge");
 const savingsPercent = document.getElementById("savings-percent");
 
+const previewNavBar = document.getElementById("preview-nav-bar");
+const btnPrevPage = document.getElementById("btn-prev-page");
+const btnNextPage = document.getElementById("btn-next-page");
+const navPageIndicator = document.getElementById("nav-page-indicator");
+
 const actionBar = document.getElementById("action-bar");
 const btnDownload = document.getElementById("btn-download");
-const btnSaveDownloads = document.getElementById("btn-save-downloads");
+
+// Temp selection inside modal
+let modalTempSelection = new Set();
 
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
-  loadRecentDownloads();
 });
 
 function setupEventListeners() {
@@ -61,7 +103,7 @@ function setupEventListeners() {
     if (files.length > 0 && files[0].name.toLowerCase().endsWith(".pdf")) {
       handleSelectedFile(files[0]);
     } else {
-      showToast("Please select a valid PDF file", "error");
+      showToast("Please drop a valid PDF file", "error");
     }
   });
 
@@ -76,6 +118,74 @@ function setupEventListeners() {
     fileInput.click();
   });
 
+  // Range input & presets
+  btnApplyRange.addEventListener("click", applyRangeFromInput);
+  slideRangeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyRangeFromInput();
+    }
+  });
+
+  chipAll.addEventListener("click", () => {
+    setSelectedPreset("all");
+    selectedSlideIndices = Array.from({ length: totalSlideCount }, (_, i) => i);
+    updateRangeInputDisplay();
+    triggerConvert();
+  });
+
+  chipSkipFirst.addEventListener("click", () => {
+    if (totalSlideCount <= 1) return;
+    setSelectedPreset("skip-first");
+    selectedSlideIndices = Array.from({ length: totalSlideCount - 1 }, (_, i) => i + 1);
+    updateRangeInputDisplay();
+    triggerConvert();
+  });
+
+  chipEven.addEventListener("click", () => {
+    setSelectedPreset("even");
+    selectedSlideIndices = Array.from({ length: totalSlideCount }, (_, i) => i).filter(i => (i + 1) % 2 === 0);
+    updateRangeInputDisplay();
+    triggerConvert();
+  });
+
+  chipOdd.addEventListener("click", () => {
+    setSelectedPreset("odd");
+    selectedSlideIndices = Array.from({ length: totalSlideCount }, (_, i) => i).filter(i => (i + 1) % 2 !== 0);
+    updateRangeInputDisplay();
+    triggerConvert();
+  });
+
+  // Visual Picker Modal
+  btnOpenPicker.addEventListener("click", openVisualPicker);
+  btnCloseModal.addEventListener("click", closeVisualPicker);
+  btnCancelModal.addEventListener("click", closeVisualPicker);
+  btnApplyModal.addEventListener("click", applyVisualPickerSelection);
+
+  modalSelectAll.addEventListener("click", () => {
+    modalTempSelection = new Set(Array.from({ length: totalSlideCount }, (_, i) => i));
+    refreshModalCards();
+  });
+
+  modalDeselectAll.addEventListener("click", () => {
+    modalTempSelection.clear();
+    refreshModalCards();
+  });
+
+  modalExcludeFirst.addEventListener("click", () => {
+    modalTempSelection.delete(0);
+    refreshModalCards();
+  });
+
+  modalInvert.addEventListener("click", () => {
+    const inverted = new Set();
+    for (let i = 0; i < totalSlideCount; i++) {
+      if (!modalTempSelection.has(i)) inverted.add(i);
+    }
+    modalTempSelection = inverted;
+    refreshModalCards();
+  });
+
   // Layout radio buttons
   layoutOptions.forEach(opt => {
     opt.addEventListener("click", () => {
@@ -87,48 +197,66 @@ function setupEventListeners() {
     });
   });
 
-  // Toggles
+  // Options
   toggleBorder.addEventListener("change", triggerConvert);
   toggleNumbers.addEventListener("change", triggerConvert);
   selectOrientation.addEventListener("change", triggerConvert);
 
-  // Actions
-  btnDownload.addEventListener("click", () => {
-    if (!currentToken) return;
-    window.location.href = `/api/download?token=${currentToken}`;
-    showToast("Downloading converted PDF...", "success");
-  });
-
-  btnSaveDownloads.addEventListener("click", async () => {
-    if (!currentToken) return;
-    btnSaveDownloads.disabled = true;
-    try {
-      const resp = await fetch("/api/save-to-downloads", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: currentToken, filename: currentFilename })
-      });
-      const data = await resp.json();
-      if (data.status === "ok") {
-        showToast(data.message, "success");
-      } else {
-        showToast(data.message || "Failed to save to Downloads", "error");
-      }
-    } catch (err) {
-      showToast(err.message, "error");
-    } finally {
-      btnSaveDownloads.disabled = false;
+  // Preview Pagination
+  btnPrevPage.addEventListener("click", () => {
+    if (currentPreviewPage > 1) {
+      currentPreviewPage--;
+      renderPreviewPage(currentPreviewPage);
     }
   });
 
-  btnRefreshRecent.addEventListener("click", loadRecentDownloads);
+  btnNextPage.addEventListener("click", () => {
+    if (currentPreviewPage < totalPreviewPages) {
+      currentPreviewPage++;
+      renderPreviewPage(currentPreviewPage);
+    }
+  });
+
+  // Download Action
+  btnDownload.addEventListener("click", () => {
+    if (!convertedPdfBytes) return;
+    const blob = new Blob([convertedPdfBytes], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const activeLayout = getSelectedLayout();
+    const slidesPerPage = activeLayout === '8up' ? 8 : (activeLayout === '4up' ? 4 : (activeLayout === '9up' ? 9 : 6));
+    a.href = url;
+    a.download = `${currentFileName}_${slidesPerPage}_slides_per_page.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast("PDF downloaded successfully!", "success");
+  });
 }
 
-function handleSelectedFile(file) {
-  currentFile = file;
-  currentLocalPath = null;
+async function handleSelectedFile(file) {
+  currentFileName = file.name.replace(/\.[^/.]+$/, "");
   displayFileInfo(file.name, (file.size / (1024 * 1024)).toFixed(2) + " MB");
-  triggerConvert();
+  
+  try {
+    inputPdfBytes = await file.arrayBuffer();
+    
+    // Load source PDF with PDF.js to get slide count & prepare thumbnails
+    const loadingTask = pdfjsLib.getDocument({ data: inputPdfBytes });
+    sourcePdfInstance = await loadingTask.promise;
+    totalSlideCount = sourcePdfInstance.numPages;
+
+    // Default select all slides
+    selectedSlideIndices = Array.from({ length: totalSlideCount }, (_, i) => i);
+    selectionCard.style.display = "block";
+    updateRangeInputDisplay();
+    setSelectedPreset("all");
+
+    triggerConvert();
+  } catch (err) {
+    showToast("Error reading PDF: " + err.message, "error");
+  }
 }
 
 function displayFileInfo(name, sizeStr) {
@@ -138,107 +266,407 @@ function displayFileInfo(name, sizeStr) {
   fileInfoBar.style.display = "flex";
 }
 
-async function loadRecentDownloads() {
-  try {
-    const res = await fetch("/api/recent-downloads");
-    const data = await res.json();
-    if (data.status === "ok" && data.recent_files.length > 0) {
-      recentChipsContainer.innerHTML = "";
-      data.recent_files.forEach(file => {
-        const chip = document.createElement("div");
-        chip.className = "recent-chip";
-        chip.innerHTML = `
-          <span class="recent-chip-name" title="${file.path}">${file.name}</span>
-          <span class="recent-chip-size">${file.size_mb} MB</span>
-        `;
-        chip.addEventListener("click", () => {
-          currentFile = null;
-          currentLocalPath = file.path;
-          displayFileInfo(file.name, `${file.size_mb} MB (from Downloads)`);
-          triggerConvert();
-        });
-        recentChipsContainer.appendChild(chip);
-      });
-    } else {
-      recentChipsContainer.innerHTML = `<span class="chip-loading">No recent PDF files found in Downloads.</span>`;
-    }
-  } catch (e) {
-    recentChipsContainer.innerHTML = `<span class="chip-loading">Failed to load recent files.</span>`;
-  }
-}
-
 function getSelectedLayout() {
   const activeOpt = document.querySelector(".layout-option.active");
   return activeOpt ? activeOpt.dataset.layout : "6up";
 }
 
+// Range parsing and formatting
+function parseRangeString(str, total) {
+  if (!str || str.trim().toLowerCase() === "all" || str.trim() === "*") {
+    return Array.from({ length: total }, (_, i) => i);
+  }
+
+  const selected = new Set();
+  const parts = str.replace(/\s+/g, "").split(",");
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.includes("-")) {
+      const [startStr, endStr] = part.split("-");
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
+      if (!isNaN(start) && !isNaN(end)) {
+        const from = Math.max(1, start);
+        const to = Math.min(total, end);
+        for (let p = from; p <= to; p++) selected.add(p - 1);
+      }
+    } else {
+      const p = parseInt(part, 10);
+      if (!isNaN(p) && p >= 1 && p <= total) {
+        selected.add(p - 1);
+      }
+    }
+  }
+
+  const res = Array.from(selected).sort((a, b) => a - b);
+  return res.length > 0 ? res : Array.from({ length: total }, (_, i) => i);
+}
+
+function formatIndicesToRange(indices, total) {
+  if (indices.length === total) return "all";
+  if (indices.length === 0) return "";
+
+  const pages = indices.map(i => i + 1).sort((a, b) => a - b);
+  const ranges = [];
+  let start = pages[0];
+  let prev = pages[0];
+
+  for (let i = 1; i < pages.length; i++) {
+    if (pages[i] === prev + 1) {
+      prev = pages[i];
+    } else {
+      ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+      start = pages[i];
+      prev = pages[i];
+    }
+  }
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+  return ranges.join(", ");
+}
+
+function updateRangeInputDisplay() {
+  slideRangeInput.value = formatIndicesToRange(selectedSlideIndices, totalSlideCount);
+  selectionSummaryBadge.textContent = `${selectedSlideIndices.length} / ${totalSlideCount} slides selected`;
+}
+
+function applyRangeFromInput() {
+  if (totalSlideCount === 0) return;
+  const parsed = parseRangeString(slideRangeInput.value, totalSlideCount);
+  selectedSlideIndices = parsed;
+  updateRangeInputDisplay();
+  clearPresetChips();
+  triggerConvert();
+  showToast(`Applied selection: ${selectedSlideIndices.length} slides`, "info");
+}
+
+function setSelectedPreset(preset) {
+  clearPresetChips();
+  if (preset === "all") chipAll.classList.add("active");
+  if (preset === "skip-first") chipSkipFirst.classList.add("active");
+  if (preset === "even") chipEven.classList.add("active");
+  if (preset === "odd") chipOdd.classList.add("active");
+}
+
+function clearPresetChips() {
+  [chipAll, chipSkipFirst, chipEven, chipOdd].forEach(chip => chip.classList.remove("active"));
+}
+
+// Visual Picker Modal Logic
+async function openVisualPicker() {
+  if (!sourcePdfInstance || totalSlideCount === 0) {
+    showToast("Please upload a PDF first", "error");
+    return;
+  }
+
+  modalTempSelection = new Set(selectedSlideIndices);
+  pickerModal.style.display = "flex";
+  updateModalCounter();
+  buildThumbnailGrid();
+}
+
+function closeVisualPicker() {
+  pickerModal.style.display = "none";
+}
+
+function applyVisualPickerSelection() {
+  if (modalTempSelection.size === 0) {
+    showToast("Please select at least 1 slide", "error");
+    return;
+  }
+
+  selectedSlideIndices = Array.from(modalTempSelection).sort((a, b) => a - b);
+  updateRangeInputDisplay();
+  clearPresetChips();
+  closeVisualPicker();
+  triggerConvert();
+  showToast(`Updated to ${selectedSlideIndices.length} slides`, "success");
+}
+
+function updateModalCounter() {
+  modalCounter.textContent = `Selected ${modalTempSelection.size} of ${totalSlideCount} slides`;
+}
+
+function buildThumbnailGrid() {
+  thumbnailGrid.innerHTML = "";
+
+  for (let i = 0; i < totalSlideCount; i++) {
+    const isSelected = modalTempSelection.has(i);
+    const card = document.createElement("div");
+    card.className = `thumb-card ${isSelected ? "selected" : "excluded"}`;
+    card.dataset.index = i;
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "thumb-card-canvas";
+    canvas.id = `thumb-canvas-${i}`;
+
+    const meta = document.createElement("div");
+    meta.className = "thumb-meta";
+    meta.innerHTML = `
+      <span class="thumb-num">#${i + 1}</span>
+      <div class="thumb-check">${isSelected ? "✓" : ""}</div>
+    `;
+
+    card.appendChild(canvas);
+    card.appendChild(meta);
+
+    card.addEventListener("click", () => {
+      toggleCardSelection(card, i);
+    });
+
+    thumbnailGrid.appendChild(card);
+  }
+
+  // Lazy render thumbnails
+  lazyRenderThumbnails();
+}
+
+function toggleCardSelection(card, idx) {
+  if (modalTempSelection.has(idx)) {
+    modalTempSelection.delete(idx);
+    card.classList.remove("selected");
+    card.classList.add("excluded");
+    card.querySelector(".thumb-check").textContent = "";
+  } else {
+    modalTempSelection.add(idx);
+    card.classList.add("selected");
+    card.classList.remove("excluded");
+    card.querySelector(".thumb-check").textContent = "✓";
+  }
+  updateModalCounter();
+}
+
+function refreshModalCards() {
+  const cards = thumbnailGrid.querySelectorAll(".thumb-card");
+  cards.forEach(card => {
+    const idx = parseInt(card.dataset.index, 10);
+    const isSelected = modalTempSelection.has(idx);
+    if (isSelected) {
+      card.classList.add("selected");
+      card.classList.remove("excluded");
+      card.querySelector(".thumb-check").textContent = "✓";
+    } else {
+      card.classList.remove("selected");
+      card.classList.add("excluded");
+      card.querySelector(".thumb-check").textContent = "";
+    }
+  });
+  updateModalCounter();
+}
+
+async function lazyRenderThumbnails() {
+  // Render visible thumbnails
+  for (let i = 0; i < totalSlideCount; i++) {
+    const canvas = document.getElementById(`thumb-canvas-${i}`);
+    if (!canvas || canvas.dataset.rendered === "true") continue;
+
+    try {
+      const page = await sourcePdfInstance.getPage(i + 1);
+      const viewport = page.getViewport({ scale: 0.28 });
+      const context = canvas.getContext("2d");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+
+      canvas.dataset.rendered = "true";
+    } catch (e) {
+      console.warn("Thumbnail render error:", e);
+    }
+  }
+}
+
+// Convert logic using selectedSlideIndices
 async function triggerConvert() {
-  if (!currentFile && !currentLocalPath) return;
-  if (isProcessing) return;
+  if (!inputPdfBytes || isProcessing) return;
+
+  if (selectedSlideIndices.length === 0) {
+    showToast("No slides selected!", "error");
+    return;
+  }
 
   isProcessing = true;
   showLoading(true);
 
-  const formData = new FormData();
-  if (currentFile) {
-    formData.append("file", currentFile);
-  } else if (currentLocalPath) {
-    formData.append("local_path", currentLocalPath);
-  }
-
-  const layout = getSelectedLayout();
-  formData.append("layout", layout);
-  formData.append("draw_border", toggleBorder.checked ? "true" : "false");
-  formData.append("show_page_numbers", toggleNumbers.checked ? "true" : "false");
-  formData.append("orientation", selectOrientation.value);
-
   try {
-    const response = await fetch("/api/preview-and-convert", {
-      method: "POST",
-      body: formData
-    });
+    const { PDFDocument, PageSizes, rgb, StandardFonts } = PDFLib;
+    const layout = getSelectedLayout();
+    
+    let cols = 2, rows = 3;
+    if (layout === "8up") { cols = 2; rows = 4; }
+    else if (layout === "4up") { cols = 2; rows = 2; }
+    else if (layout === "9up") { cols = 3; rows = 3; }
 
-    const data = await response.json();
-    if (data.status === "ok") {
-      currentToken = data.token;
-      currentFilename = data.filename;
+    const orientation = selectOrientation.value;
+    const drawBorder = toggleBorder.checked;
+    const showPageNumbers = toggleNumbers.checked;
 
-      // Update UI with preview image
-      previewImage.src = data.preview_image;
-      previewPlaceholder.style.display = "none";
-      previewResultContainer.style.display = "flex";
+    // Load source PDF
+    const srcDoc = await PDFDocument.load(inputPdfBytes);
+    const totalSelected = selectedSlideIndices.length;
 
-      // Stats line
-      previewStatsLine.textContent = `${data.original_slides} original slides → ${data.output_pages} A4 pages (${data.slides_per_page} slides/page • ${data.ratio_label})`;
+    const slidesPerPage = cols * rows;
+    const totalPages = Math.ceil(totalSelected / slidesPerPage);
 
-      // Savings calculation
-      if (data.original_slides > 0) {
-        const savedPct = Math.round((1 - (data.output_pages / data.original_slides)) * 100);
-        savingsPercent.textContent = `${savedPct}%`;
-        savingsBadge.style.display = "flex";
+    const outDoc = await PDFDocument.create();
+    const font = await outDoc.embedFont(StandardFonts.Helvetica);
+
+    // A4 dimensions in points
+    const a4 = PageSizes.A4; // [595.28, 841.89]
+    const pageW = orientation === "landscape" ? Math.max(...a4) : Math.min(...a4);
+    const pageH = orientation === "landscape" ? Math.min(...a4) : Math.max(...a4);
+
+    const marginX = 24;
+    const marginY = 28;
+    const gapX = 14;
+    const gapY = 20;
+    const footerReserve = showPageNumbers ? 32 : 10;
+
+    const usableW = pageW - (2 * marginX) - ((cols - 1) * gapX);
+    const usableH = pageH - marginY - footerReserve - ((rows - 1) * gapY);
+
+    const cellW = usableW / cols;
+    const cellH = usableH / rows;
+
+    for (let pIdx = 0; pIdx < totalPages; pIdx++) {
+      const page = outDoc.addPage([pageW, pageH]);
+      const startIdx = pIdx * slidesPerPage;
+      const endIdx = Math.min(startIdx + slidesPerPage, totalSelected);
+
+      // Map to actual selected original slide indices
+      const currentBatchSlideIndices = selectedSlideIndices.slice(startIdx, endIdx);
+
+      // Embed pages as 100% Vector XObjects
+      const embeddedPages = await outDoc.embedPdf(srcDoc, currentBatchSlideIndices);
+
+      for (let i = 0; i < embeddedPages.length; i++) {
+        const embedded = embeddedPages[i];
+        const slideRatio = embedded.width / embedded.height;
+
+        let targetW, targetH;
+        if ((cellW / cellH) > slideRatio) {
+          targetH = cellH;
+          targetW = cellH * slideRatio;
+        } else {
+          targetW = cellW;
+          targetH = cellW / slideRatio;
+        }
+
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+
+        const offsetX = (cellW - targetW) / 2;
+        const offsetY = (cellH - targetH) / 2;
+
+        const x = marginX + c * (cellW + gapX) + offsetX;
+        const yFromTop = marginY + r * (cellH + gapY) + offsetY;
+        const y = pageH - yFromTop - targetH;
+
+        page.drawPage(embedded, {
+          x: x,
+          y: y,
+          width: targetW,
+          height: targetH
+        });
+
+        if (drawBorder) {
+          page.drawRectangle({
+            x: x,
+            y: y,
+            width: targetW,
+            height: targetH,
+            borderColor: rgb(0.8, 0.8, 0.8),
+            borderWidth: 0.5
+          });
+        }
       }
 
-      actionBar.style.display = "flex";
-    } else {
-      showToast(data.message || "Error processing slides", "error");
+      if (showPageNumbers) {
+        const footerText = `Page ${pIdx + 1} / ${totalPages}`;
+        const textWidth = font.widthOfTextAtSize(footerText, 8.5);
+        page.drawText(footerText, {
+          x: (pageW - textWidth) / 2,
+          y: 14,
+          size: 8.5,
+          font: font,
+          color: rgb(0.45, 0.45, 0.45)
+        });
+      }
     }
+
+    convertedPdfBytes = await outDoc.save();
+    totalPreviewPages = totalPages;
+    currentPreviewPage = 1;
+
+    // Load in PDF.js for instant Canvas rendering
+    const loadingTask = pdfjsLib.getDocument({ data: convertedPdfBytes });
+    previewPdfInstance = await loadingTask.promise;
+
+    await renderPreviewPage(1);
+
+    // Update stats and savings badge
+    previewStatsLine.textContent = `${totalSelected} slides selected (of ${totalSlideCount}) → ${totalPages} A4 pages (${slidesPerPage} slides/page)`;
+    if (totalSlideCount > 0) {
+      const savedPct = Math.round((1 - (totalPages / totalSlideCount)) * 100);
+      savingsPercent.textContent = `${savedPct}%`;
+      savingsBadge.style.display = "flex";
+    }
+
+    previewPlaceholder.style.display = "none";
+    previewResultContainer.style.display = "flex";
+    actionBar.style.display = "flex";
+
+    if (totalPages > 1) {
+      previewNavBar.style.display = "flex";
+      updateNavControls();
+    } else {
+      previewNavBar.style.display = "none";
+    }
+
+    showToast("Generated high-fidelity vector A4 layout!", "success");
   } catch (err) {
-    showToast(err.message, "error");
+    console.error(err);
+    showToast("Conversion failed: " + err.message, "error");
   } finally {
     isProcessing = false;
     showLoading(false);
   }
 }
 
+async function renderPreviewPage(pageNum) {
+  if (!previewPdfInstance) return;
+  const page = await previewPdfInstance.getPage(pageNum);
+
+  const desiredWidth = 750;
+  const viewport = page.getViewport({ scale: desiredWidth / page.getViewport({ scale: 1.0 }).width });
+
+  const canvas = previewCanvas;
+  const context = canvas.getContext("2d");
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+
+  const renderContext = {
+    canvasContext: context,
+    viewport: viewport
+  };
+
+  await page.render(renderContext).promise;
+  updateNavControls();
+}
+
+function updateNavControls() {
+  navPageIndicator.textContent = `Page ${currentPreviewPage} of ${totalPreviewPages}`;
+  btnPrevPage.disabled = currentPreviewPage <= 1;
+  btnNextPage.disabled = currentPreviewPage >= totalPreviewPages;
+}
+
 function showLoading(loading) {
   if (loading) {
     previewLoading.style.display = "flex";
-    if (previewPlaceholder.style.display !== "none") {
-      previewPlaceholder.style.opacity = "0.3";
-    }
-    if (previewResultContainer.style.display !== "none") {
-      previewResultContainer.style.opacity = "0.3";
-    }
+    if (previewPlaceholder.style.display !== "none") previewPlaceholder.style.opacity = "0.3";
+    if (previewResultContainer.style.display !== "none") previewResultContainer.style.opacity = "0.3";
   } else {
     previewLoading.style.display = "none";
     previewPlaceholder.style.opacity = "1";

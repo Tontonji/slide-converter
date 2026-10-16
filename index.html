@@ -73,6 +73,38 @@
           </div>
         </div>
 
+        <!-- Slide Selection Card -->
+        <div class="card selection-card" id="selection-card" style="display: none;">
+          <div class="selection-card-header">
+            <div class="selection-title-group">
+              <h2 class="card-title" style="margin-bottom: 2px;">Slide Selection (เลือกหน้า)</h2>
+              <span class="selection-badge" id="selection-summary-badge">All slides selected</span>
+            </div>
+            <button class="btn-visual-picker" id="btn-open-picker" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+              <span>Visual Picker (ดูรูปภาพ)</span>
+            </button>
+          </div>
+
+          <div class="range-input-wrapper">
+            <div class="range-input-row">
+              <input type="text" id="slide-range-input" class="range-input" placeholder="e.g. 1-12, 15, 20-35 (all = ทั้งหมด)" />
+              <button class="btn-apply-range" id="btn-apply-range" title="Apply Range">Apply</button>
+            </div>
+            <div class="quick-preset-chips">
+              <button class="preset-chip active" id="chip-all" type="button">All Slides</button>
+              <button class="preset-chip" id="chip-skip-first" type="button">Exclude #1 (ตัดหน้าปก)</button>
+              <button class="preset-chip" id="chip-even" type="button">Even Only</button>
+              <button class="preset-chip" id="chip-odd" type="button">Odd Only</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Layout Selector Card -->
         <div class="card settings-card">
           <h2 class="card-title">Layout Configuration</h2>
@@ -240,6 +272,42 @@
       <span>Crafted for high efficiency note-taking • Free & Open Source</span>
       <a href="https://github.com/Tontonji/slide-converter" target="_blank" class="github-link">GitHub Repository</a>
     </footer>
+  </div>
+
+  <!-- Visual Slide Picker Modal -->
+  <div class="modal-backdrop" id="picker-modal" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">Visual Slide Picker (เลือกหน้าสไลด์)</h2>
+          <span class="modal-subtitle" id="modal-counter">Selected 0 of 0 slides</span>
+        </div>
+        <button class="btn-close-modal" id="btn-close-modal" title="Close">✕</button>
+      </div>
+
+      <div class="modal-toolbar">
+        <div class="toolbar-left">
+          <button class="modal-tool-btn" id="modal-select-all" type="button">Select All</button>
+          <button class="modal-tool-btn" id="modal-deselect-all" type="button">Deselect All</button>
+          <button class="modal-tool-btn" id="modal-exclude-first" type="button">Exclude Slide 1 (ตัดหน้าปก)</button>
+          <button class="modal-tool-btn" id="modal-invert" type="button">Invert Selection</button>
+        </div>
+        <div class="toolbar-right">
+          <span class="modal-hint">Click cards to toggle inclusion</span>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <div class="thumbnail-grid" id="thumbnail-grid">
+          <!-- Populated dynamically with slide cards -->
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-modal" type="button">Cancel</button>
+        <button class="btn btn-primary" id="btn-apply-modal" type="button">Apply Selection & Update A4</button>
+      </div>
+    </div>
   </div>
 
   <!-- Toast Notification Container -->
