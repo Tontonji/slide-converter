@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slide Converter — N-up A4 Presentation Sheets</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+
+  <!-- Core In-Browser Vector PDF Processing & Rendering Engines -->
+  <script src="./vendor/pdf-lib.min.js"></script>
+  <script src="./vendor/pdf.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Slide Converter</h1>
+          <p class="brand-subtitle">Client-Side 100% Vector A4 Sheet Compiler • No Upload to Server Needed</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-privacy">🔒 100% Private (In-Browser)</span>
+        <span class="badge badge-vector">⚡ True Vector Quality</span>
+        <span class="badge badge-a4">📄 A4 Printable</span>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="main-layout">
+      <!-- Left Column: Controls & Upload -->
+      <section class="controls-panel">
+        <!-- Upload Card -->
+        <div class="card upload-card" id="drop-zone">
+          <input type="file" id="file-input" accept=".pdf" class="file-input-hidden" />
+          <div class="drop-content" id="drop-content-idle">
+            <div class="upload-icon-pulse">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <h3 class="upload-title">Drop your PDF slides here</h3>
+            <p class="upload-desc">or click to browse from device</p>
+            <span class="upload-hint">Supports PowerPoint, Keynote & Canva PDF exports (4:3 or 16:9)</span>
+          </div>
+
+          <div class="file-info-bar" id="file-info-bar" style="display: none;">
+            <div class="file-meta">
+              <div class="file-icon-pdf">PDF</div>
+              <div class="file-details">
+                <span class="file-name" id="selected-file-name">presentation.pdf</span>
+                <span class="file-stats" id="selected-file-stats">0 slides • 0 MB</span>
+              </div>
+            </div>
+            <button class="btn-icon" id="btn-change-file" title="Change File">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Layout Selector Card -->
+        <div class="card settings-card">
+          <h2 class="card-title">Layout Configuration</h2>
+          
+          <div class="layout-grid">
+            <!-- 6 Slides Preset (Default) -->
+            <label class="layout-option active" data-layout="6up">
+              <input type="radio" name="layout" value="6up" checked>
+              <div class="layout-preview-icon grid-6">
+                <span></span><span></span>
+                <span></span><span></span>
+                <span></span><span></span>
+              </div>
+              <div class="layout-details">
+                <div class="layout-title-row">
+                  <span class="layout-name">6 Slides / Page</span>
+                  <span class="tag-rec">Recommended</span>
+                </div>
+                <span class="layout-desc">2 cols × 3 rows • Best balance for study & notes</span>
+              </div>
+            </label>
+
+            <!-- 8 Slides Preset -->
+            <label class="layout-option" data-layout="8up">
+              <input type="radio" name="layout" value="8up">
+              <div class="layout-preview-icon grid-8">
+                <span></span><span></span>
+                <span></span><span></span>
+                <span></span><span></span>
+                <span></span><span></span>
+              </div>
+              <div class="layout-details">
+                <span class="layout-name">8 Slides / Page</span>
+                <span class="layout-desc">2 cols × 4 rows • Maximum paper savings</span>
+              </div>
+            </label>
+
+            <!-- 4 Slides Preset -->
+            <label class="layout-option" data-layout="4up">
+              <input type="radio" name="layout" value="4up">
+              <div class="layout-preview-icon grid-4">
+                <span></span><span></span>
+                <span></span><span></span>
+              </div>
+              <div class="layout-details">
+                <span class="layout-name">4 Slides / Page</span>
+                <span class="layout-desc">2 cols × 2 rows • Large readable text & diagrams</span>
+              </div>
+            </label>
+
+            <!-- 9 Slides Preset -->
+            <label class="layout-option" data-layout="9up">
+              <input type="radio" name="layout" value="9up">
+              <div class="layout-preview-icon grid-9">
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+              </div>
+              <div class="layout-details">
+                <span class="layout-name">9 Slides / Page</span>
+                <span class="layout-desc">3 cols × 3 rows • Dense overview</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Options Toggles -->
+          <div class="options-group">
+            <h3 class="options-heading">Fine Tuning</h3>
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-label">Slide Borders</span>
+                <span class="toggle-sub">Subtle 0.5pt outline for slides with white backgrounds</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-border" checked>
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-label">Page Numbering</span>
+                <span class="toggle-sub">Shows "Page X / Y" at the bottom of each A4 page</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-numbers" checked>
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-label">Orientation</span>
+                <span class="toggle-sub">A4 Portrait (standard for binders) or Landscape</span>
+              </div>
+              <select id="select-orientation" class="select-input">
+                <option value="portrait" selected>Portrait (แนวตั้ง)</option>
+                <option value="landscape">Landscape (แนวนอน)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Live Preview & Actions -->
+      <section class="preview-panel">
+        <div class="card preview-card">
+          <div class="preview-header">
+            <div>
+              <h2 class="card-title">A4 Page Preview</h2>
+              <span class="preview-subtitle" id="preview-stats-line">Interactive Live Render</span>
+            </div>
+            <div class="savings-tag" id="savings-badge" style="display: none;">
+              <span class="savings-percent" id="savings-percent">83%</span>
+              <span class="savings-text">Paper Saved</span>
+            </div>
+          </div>
+
+          <!-- Preview Stage -->
+          <div class="preview-stage" id="preview-stage">
+            <div class="preview-placeholder" id="preview-placeholder">
+              <div class="placeholder-art">
+                <div class="sheet-mockup">
+                  <div class="mockup-slot"></div><div class="mockup-slot"></div>
+                  <div class="mockup-slot"></div><div class="mockup-slot"></div>
+                  <div class="mockup-slot"></div><div class="mockup-slot"></div>
+                </div>
+              </div>
+              <p>Upload a presentation slide deck to see instant high-resolution preview</p>
+            </div>
+
+            <div class="preview-loading" id="preview-loading" style="display: none;">
+              <div class="spinner"></div>
+              <span id="loading-text">Embedding vector slides into A4 grid...</span>
+            </div>
+
+            <div class="preview-result-container" id="preview-result-container" style="display: none;">
+              <canvas id="preview-canvas" class="preview-image-canvas"></canvas>
+            </div>
+          </div>
+
+          <!-- Preview Page Navigation -->
+          <div class="preview-nav-bar" id="preview-nav-bar" style="display: none;">
+            <button class="nav-btn" id="btn-prev-page" title="Previous Page">◀ Prev</button>
+            <span class="nav-page-indicator" id="nav-page-indicator">Page 1 of 1</span>
+            <button class="nav-btn" id="btn-next-page" title="Next Page">Next ▶</button>
+          </div>
+
+          <!-- Action Buttons Bar -->
+          <div class="action-bar" id="action-bar" style="display: none;">
+            <button class="btn btn-primary" id="btn-download">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Download A4 PDF</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span>Crafted for high efficiency note-taking • Free & Open Source</span>
+      <a href="https://github.com/Tontonji/slide-converter" target="_blank" class="github-link">GitHub Repository</a>
+    </footer>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

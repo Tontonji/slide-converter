@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.system_generated/
+*.pdf
+!test_*.pdf
+.DS_Store
