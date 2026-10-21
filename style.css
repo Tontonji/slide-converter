@@ -730,6 +730,29 @@ body {
   margin-bottom: 14px;
 }
 
+.highlight-row {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+}
+
+.font-bold {
+  font-weight: 700;
+  color: #fff;
+}
+
+.badge-mini-rec {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+}
+
 .toggle-info {
   display: flex;
   flex-direction: column;

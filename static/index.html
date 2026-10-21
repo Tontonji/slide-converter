@@ -173,6 +173,35 @@
           <!-- Options Toggles -->
           <div class="options-group">
             <h3 class="options-heading">Fine Tuning</h3>
+
+            <!-- Fit In Function Toggle -->
+            <div class="toggle-row highlight-row">
+              <div class="toggle-info">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="toggle-label font-bold">Fit In (กระชับหน้ากระดาษ)</span>
+                  <span class="badge-mini-rec">Fit In</span>
+                </div>
+                <span class="toggle-sub">ลดช่องว่างขอบขาว ขยายสไลด์ใหญ่ขึ้น และจัดระยะชิดกระชับพอดี</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-fit-in" checked>
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <!-- Fit Style Selector -->
+            <div class="toggle-row" id="fit-style-row">
+              <div class="toggle-info">
+                <span class="toggle-label">Fit Style (รูปแบบความกระชับ)</span>
+                <span class="toggle-sub">เลือกตำแหน่งการจัดวางสไลด์บนหน้า A4</span>
+              </div>
+              <select id="select-fit-style" class="select-input">
+                <option value="center" selected>กระชับกึ่งกลาง (Center Snug) — แนะนำ</option>
+                <option value="top">กระชับชิดบน + เว้นที่จดโน้ต (Top Fit + Notes Area)</option>
+                <option value="tight">กระชับขอบบางพิเศษ (Ultra Tight)</option>
+              </select>
+            </div>
+
             <div class="toggle-row">
               <div class="toggle-info">
                 <span class="toggle-label">Slide Borders</span>

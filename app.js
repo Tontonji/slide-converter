@@ -56,6 +56,9 @@ const layoutOptions = document.querySelectorAll(".layout-option");
 const toggleBorder = document.getElementById("toggle-border");
 const toggleNumbers = document.getElementById("toggle-numbers");
 const selectOrientation = document.getElementById("select-orientation");
+const toggleFitIn = document.getElementById("toggle-fit-in");
+const selectFitStyle = document.getElementById("select-fit-style");
+const fitStyleRow = document.getElementById("fit-style-row");
 
 // Preview Elements
 const previewPlaceholder = document.getElementById("preview-placeholder");
@@ -201,6 +204,18 @@ function setupEventListeners() {
   toggleBorder.addEventListener("change", triggerConvert);
   toggleNumbers.addEventListener("change", triggerConvert);
   selectOrientation.addEventListener("change", triggerConvert);
+
+  if (toggleFitIn) {
+    toggleFitIn.addEventListener("change", () => {
+      if (fitStyleRow) {
+        fitStyleRow.style.display = toggleFitIn.checked ? "flex" : "none";
+      }
+      triggerConvert();
+    });
+  }
+  if (selectFitStyle) {
+    selectFitStyle.addEventListener("change", triggerConvert);
+  }
 
   // Preview Pagination
   btnPrevPage.addEventListener("click", () => {
@@ -518,17 +533,82 @@ async function triggerConvert() {
     const pageW = orientation === "landscape" ? Math.max(...a4) : Math.min(...a4);
     const pageH = orientation === "landscape" ? Math.min(...a4) : Math.max(...a4);
 
-    const marginX = 24;
-    const marginY = 28;
-    const gapX = 14;
-    const gapY = 20;
-    const footerReserve = showPageNumbers ? 32 : 10;
+    const fitIn = toggleFitIn ? toggleFitIn.checked : true;
+    const fitStyle = selectFitStyle ? selectFitStyle.value : "center";
 
-    const usableW = pageW - (2 * marginX) - ((cols - 1) * gapX);
-    const usableH = pageH - marginY - footerReserve - ((rows - 1) * gapY);
+    let def_mx, def_my, def_gx, def_gy, footerReserve;
+    if (fitIn) {
+      if (fitStyle === "tight") {
+        def_mx = 8; def_my = 10; def_gx = 6; def_gy = 8;
+        footerReserve = showPageNumbers ? 18 : 4;
+      } else {
+        def_mx = 12; def_my = 16; def_gx = 8; def_gy = 10;
+        footerReserve = showPageNumbers ? 22 : 6;
+      }
+    } else {
+      def_mx = 24; def_my = 28; def_gx = 14; def_gy = 20;
+      footerReserve = showPageNumbers ? 32 : 10;
+    }
 
-    const cellW = usableW / cols;
-    const cellH = usableH / rows;
+    const mx = def_mx, my = def_my, gx = def_gx, gy = def_gy;
+    const availW = pageW - (2 * mx) - ((cols - 1) * gx);
+    const availH = pageH - my - footerReserve - ((rows - 1) * gy);
+
+    if (availW <= 0 || availH <= 0) throw new Error("Margins are too large for chosen page size");
+
+    // Sample slide aspect ratio from first selected slide
+    const sampleEmbedded = await outDoc.embedPdf(srcDoc, [selectedSlideIndices[0]]);
+    const sampleSlide = sampleEmbedded[0];
+    const slideRatio = (sampleSlide.width / sampleSlide.height) || (4 / 3);
+
+    const wFromWidth = availW / cols;
+    const hFromWidth = wFromWidth / slideRatio;
+    const hFromHeight = availH / rows;
+    const wFromHeight = hFromHeight * slideRatio;
+
+    let targetW, targetH, originX, originY, stepX, stepY, offsetX, offsetY;
+
+    if (fitIn) {
+      if ((hFromWidth * rows) <= availH) {
+        targetW = wFromWidth;
+        targetH = hFromWidth;
+      } else {
+        targetH = hFromHeight;
+        targetW = wFromHeight;
+      }
+
+      const totalContentW = cols * targetW + (cols - 1) * gx;
+      const totalContentH = rows * targetH + (rows - 1) * gy;
+
+      originX = (pageW - totalContentW) / 2;
+      if (fitStyle === "top") {
+        originY = my;
+      } else {
+        originY = my + ((pageH - my - footerReserve) - totalContentH) / 2;
+      }
+
+      stepX = targetW + gx;
+      stepY = targetH + gy;
+      offsetX = 0;
+      offsetY = 0;
+    } else {
+      const cellW = availW / cols;
+      const cellH = availH / rows;
+      if ((cellW / cellH) > slideRatio) {
+        targetH = cellH;
+        targetW = cellH * slideRatio;
+      } else {
+        targetW = cellW;
+        targetH = cellW / slideRatio;
+      }
+
+      originX = mx;
+      originY = my;
+      stepX = cellW + gx;
+      stepY = cellH + gy;
+      offsetX = (cellW - targetW) / 2;
+      offsetY = (cellH - targetH) / 2;
+    }
 
     for (let pIdx = 0; pIdx < totalPages; pIdx++) {
       const page = outDoc.addPage([pageW, pageH]);
@@ -543,25 +623,11 @@ async function triggerConvert() {
 
       for (let i = 0; i < embeddedPages.length; i++) {
         const embedded = embeddedPages[i];
-        const slideRatio = embedded.width / embedded.height;
-
-        let targetW, targetH;
-        if ((cellW / cellH) > slideRatio) {
-          targetH = cellH;
-          targetW = cellH * slideRatio;
-        } else {
-          targetW = cellW;
-          targetH = cellW / slideRatio;
-        }
-
         const c = i % cols;
         const r = Math.floor(i / cols);
 
-        const offsetX = (cellW - targetW) / 2;
-        const offsetY = (cellH - targetH) / 2;
-
-        const x = marginX + c * (cellW + gapX) + offsetX;
-        const yFromTop = marginY + r * (cellH + gapY) + offsetY;
+        const x = originX + c * stepX + offsetX;
+        const yFromTop = originY + r * stepY + offsetY;
         const y = pageH - yFromTop - targetH;
 
         page.drawPage(embedded, {
@@ -607,7 +673,7 @@ async function triggerConvert() {
     await renderPreviewPage(1);
 
     // Update stats and savings badge
-    previewStatsLine.textContent = `${totalSelected} slides selected (of ${totalSlideCount}) → ${totalPages} A4 pages (${slidesPerPage} slides/page)`;
+    previewStatsLine.textContent = `${totalSelected} slides selected (of ${totalSlideCount}) → ${totalPages} A4 pages (${slidesPerPage} slides/page • ${fitIn ? "⚡ Fit In: กระชับพอดีหน้า" : "Standard"})`;
     if (totalSlideCount > 0) {
       const savedPct = Math.round((1 - (totalPages / totalSlideCount)) * 100);
       savingsPercent.textContent = `${savedPct}%`;

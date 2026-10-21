@@ -51,19 +51,21 @@ def convert_pdf_to_nup(
     orientation: str = "portrait",
     draw_border: bool = True,
     show_page_numbers: bool = True,
-    margin_x: float = 24.0,
-    margin_y: float = 28.0,
-    gap_x: float = 14.0,
-    gap_y: float = 20.0,
+    margin_x: Optional[float] = None,
+    margin_y: Optional[float] = None,
+    gap_x: Optional[float] = None,
+    gap_y: Optional[float] = None,
     border_color: Tuple[float, float, float] = (0.8, 0.8, 0.8),
     border_width: float = 0.5,
     page_selection: Optional[Union[str, list[int]]] = None,
+    fit_in: bool = True,
+    fit_style: str = "center",
 ) -> bytes:
     """
     Convert a slide presentation PDF to an N-up layout on A4 paper.
     Maintains 100% vector sharpness using PyMuPDF.
     
-    Returns output PDF as bytes. If output_path is provided, also saves to file.
+    Supports 'fit_in' compact mode to eliminate loose awkward row gaps and maximize slide size.
     """
     if isinstance(input_source, bytes):
         src_doc = fitz.open(stream=input_source, filetype="pdf")
@@ -95,35 +97,79 @@ def convert_pdf_to_nup(
     else:
         page_w, page_h = min(a4_w, a4_h), max(a4_w, a4_h)
 
-    # Footer reserve
-    footer_reserve = 32.0 if show_page_numbers else 10.0
+    # Margins and gaps defaults based on fit_in
+    if fit_in:
+        if fit_style == "tight":
+            def_mx, def_my, def_gx, def_gy = 8.0, 10.0, 6.0, 8.0
+            footer_reserve = 18.0 if show_page_numbers else 4.0
+        else: # "center" or "top"
+            def_mx, def_my, def_gx, def_gy = 12.0, 16.0, 8.0, 10.0
+            footer_reserve = 22.0 if show_page_numbers else 6.0
+    else:
+        def_mx, def_my, def_gx, def_gy = 24.0, 28.0, 14.0, 20.0
+        footer_reserve = 32.0 if show_page_numbers else 10.0
 
-    # Usable area for grid
-    usable_w = page_w - (2 * margin_x) - ((cols - 1) * gap_x)
-    usable_h = page_h - margin_y - footer_reserve - ((rows - 1) * gap_y)
+    mx = margin_x if margin_x is not None else def_mx
+    my = margin_y if margin_y is not None else def_my
+    gx = gap_x if gap_x is not None else def_gx
+    gy = gap_y if gap_y is not None else def_gy
 
-    if usable_w <= 0 or usable_h <= 0:
+    # Available bounding box for all slides
+    avail_w = page_w - (2 * mx) - ((cols - 1) * gx)
+    avail_h = page_h - my - footer_reserve - ((rows - 1) * gy)
+
+    if avail_w <= 0 or avail_h <= 0:
         raise ValueError("Margins/gaps are too large for the chosen paper size.")
-
-    cell_w = usable_w / cols
-    cell_h = usable_h / rows
 
     # Get aspect ratio of first slide
     sample_rect = src_doc[0].rect
     slide_ratio = (sample_rect.width / sample_rect.height) if sample_rect.height > 0 else (4.0 / 3.0)
 
-    # Fit slide into cell while preserving aspect ratio
-    if (cell_w / cell_h) > slide_ratio:
-        # Cell is wider than slide -> height constrained
-        target_h = cell_h
-        target_w = cell_h * slide_ratio
-    else:
-        # Cell is taller than slide -> width constrained
-        target_w = cell_w
-        target_h = cell_w / slide_ratio
+    # Max slide dimension fitting in avail_w and avail_h
+    w_from_width = avail_w / cols
+    h_from_width = w_from_width / slide_ratio
+    h_from_height = avail_h / rows
+    w_from_height = h_from_height * slide_ratio
 
-    offset_x = (cell_w - target_w) / 2.0
-    offset_y = (cell_h - target_h) / 2.0
+    if fit_in:
+        # Fit In mode: Snug tight fit! Gaps between slides are EXACTLY gx and gy
+        if (h_from_width * rows) <= avail_h:
+            target_w = w_from_width
+            target_h = h_from_width
+        else:
+            target_h = h_from_height
+            target_w = w_from_height
+
+        total_content_w = cols * target_w + (cols - 1) * gx
+        total_content_h = rows * target_h + (rows - 1) * gy
+
+        # Origin positioning
+        origin_x = (page_w - total_content_w) / 2.0
+        if fit_style == "top":
+            origin_y = my
+        else: # "center" or "tight"
+            origin_y = my + ((page_h - my - footer_reserve) - total_content_h) / 2.0
+
+        step_x = target_w + gx
+        step_y = target_h + gy
+        offset_x = 0.0
+        offset_y = 0.0
+    else:
+        # Standard mode: Spread across grid cells
+        cell_w = avail_w / cols
+        cell_h = avail_h / rows
+        if (cell_w / cell_h) > slide_ratio:
+            target_h = cell_h
+            target_w = cell_h * slide_ratio
+        else:
+            target_w = cell_w
+            target_h = cell_w / slide_ratio
+        origin_x = mx
+        origin_y = my
+        step_x = cell_w + gx
+        step_y = cell_h + gy
+        offset_x = (cell_w - target_w) / 2.0
+        offset_y = (cell_h - target_h) / 2.0
 
     out_doc = fitz.open()
 
@@ -139,8 +185,8 @@ def convert_pdf_to_nup(
             c = i % cols
             r = i // cols
 
-            x0 = margin_x + c * (cell_w + gap_x) + offset_x
-            y0 = margin_y + r * (cell_h + gap_y) + offset_y
+            x0 = origin_x + c * step_x + offset_x
+            y0 = origin_y + r * step_y + offset_y
             x1 = x0 + target_w
             y1 = y0 + target_h
 
@@ -215,6 +261,8 @@ def main():
     parser.add_argument("--orientation", choices=["portrait", "landscape"], default="portrait", help="Page orientation")
     parser.add_argument("--pages", help="Specific slides to include (e.g. '1-10, 15, 20-30')")
     parser.add_argument("--exclude", help="Slides to exclude (e.g. '1, 54')")
+    parser.add_argument("--no-fit-in", action="store_true", help="Disable Fit In compact mode (use loose standard grid)")
+    parser.add_argument("--fit-style", choices=["center", "top", "tight"], default="center", help="Fit In alignment style")
     parser.add_argument("--no-border", action="store_true", help="Disable slide border")
     parser.add_argument("--no-numbers", action="store_true", help="Disable page numbers")
 
@@ -249,7 +297,7 @@ def main():
         excl_indices = set(parse_page_selection(args.exclude, tot))
         page_selection = [i for i in range(tot) if i not in excl_indices]
 
-    print(f"Converting '{args.input}' -> '{args.output}' ({cols}x{rows} on A4 {args.orientation})...")
+    print(f"Converting '{args.input}' -> '{args.output}' ({cols}x{rows} on A4 {args.orientation}, fit_in={not args.no_fit_in})...")
     convert_pdf_to_nup(
         input_source=args.input,
         output_path=args.output,
@@ -258,7 +306,9 @@ def main():
         orientation=args.orientation,
         draw_border=not args.no_border,
         show_page_numbers=not args.no_numbers,
-        page_selection=page_selection
+        page_selection=page_selection,
+        fit_in=not args.no_fit_in,
+        fit_style=args.fit_style,
     )
     print(f"Successfully generated: {args.output}")
 
